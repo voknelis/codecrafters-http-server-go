@@ -5,26 +5,29 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type Response struct {
 	statusLine StatusLine
-	headers    string
+	headers    map[string]string
 	body       string
 }
 
 func (r *Response) String() string {
 	response := r.statusLine.String()
-	response += r.headers
-	if r.headers != "" {
-		response += "\r\n"
+
+	for header, value := range r.headers {
+		response += fmt.Sprintf("%s: %s\r\n", header, value)
 	}
-	response += "\r\n" + r.body
+	response += "\r\n"
+
+	response += r.body
 	return response
 }
 
-func NewResponse(statusLine StatusLine, headers string, body string) *Response {
+func NewResponse(statusLine StatusLine, headers map[string]string, body string) *Response {
 	return &Response{
 		statusLine: statusLine,
 		headers:    headers,
@@ -116,12 +119,25 @@ func handleConnection(conn net.Conn) error {
 	requestStatusLine := strings.Split(requestParts[0], " ")
 	path := requestStatusLine[1]
 
+	headers := make(map[string]string)
+	body := ""
+
 	statusLine := NewStatusLine("HTTP/1.1", StatusOK)
 	if path != "/" {
 		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
 	}
+	if strings.HasPrefix(path, "/echo/") {
+		statusLine = NewStatusLine("HTTP/1.1", StatusOK)
 
-	response := NewResponse(*statusLine, "", "")
+		echoValue, _ := strings.CutPrefix(path, "/echo/")
+
+		headers["Content-Type"] = "text/plain"
+		headers["Content-Length"] = strconv.Itoa(len(echoValue))
+
+		body = echoValue
+	}
+
+	response := NewResponse(*statusLine, headers, body)
 	_, err = conn.Write([]byte(response.String()))
 	if err != nil {
 		return fmt.Errorf("error writing to connection: %s", err.Error())
