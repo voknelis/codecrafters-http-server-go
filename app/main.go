@@ -119,14 +119,13 @@ func handleConnection(conn net.Conn) error {
 	requestStatusLine := strings.Split(requestParts[0], " ")
 	path := requestStatusLine[1]
 
+	var statusLine *StatusLine
 	headers := make(map[string]string)
 	body := ""
 
-	statusLine := NewStatusLine("HTTP/1.1", StatusOK)
-	if path != "/" {
-		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
-	}
-	if strings.HasPrefix(path, "/echo/") {
+	if path == "/" {
+		statusLine = NewStatusLine("HTTP/1.1", StatusOK)
+	} else if strings.HasPrefix(path, "/echo/") {
 		statusLine = NewStatusLine("HTTP/1.1", StatusOK)
 
 		echoValue, _ := strings.CutPrefix(path, "/echo/")
@@ -135,6 +134,8 @@ func handleConnection(conn net.Conn) error {
 		headers["Content-Length"] = strconv.Itoa(len(echoValue))
 
 		body = echoValue
+	} else {
+		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
 	}
 
 	response := NewResponse(*statusLine, headers, body)
