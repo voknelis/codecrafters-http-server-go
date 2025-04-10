@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 type Response struct {
@@ -40,11 +42,28 @@ func (s *StatusLine) String() string {
 	return fmt.Sprintf("%s %d %s\r\n", s.httpVersion, s.statusCode, s.statusCodePhrase)
 }
 
-func NewStatusLine(httpVersion string, statusCode int, statusCodePhrase string) *StatusLine {
+func NewStatusLine(httpVersion string, statusCode int) *StatusLine {
+	statusText := StatusText(statusCode)
 	return &StatusLine{
 		httpVersion:      httpVersion,
 		statusCode:       statusCode,
-		statusCodePhrase: statusCodePhrase,
+		statusCodePhrase: statusText,
+	}
+}
+
+const (
+	StatusOK       = 200
+	StatusNotFound = 404
+)
+
+func StatusText(code int) string {
+	switch code {
+	case StatusOK:
+		return "OK"
+	case StatusNotFound:
+		return "Not Found"
+	default:
+		return ""
 	}
 }
 
@@ -57,36 +76,57 @@ func main() {
 }
 
 func startTCPServer(port string) error {
-	fmt.Println("Starting TCP server at port 4221")
+	fmt.Printf("Starting TCP server at port %s\n", port)
 	defer fmt.Println("Closing TCP server")
 
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
+		return fmt.Errorf("failed to bind to port %s", port)
 	}
 	defer listener.Close()
 
 	conn, err := listener.Accept()
 	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("error accepting connection: %s", err.Error())
 	}
 
-	handleConnection(conn)
+	err = handleConnection(conn)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn) error {
 	defer conn.Close()
 
-	statusLine := NewStatusLine("HTTP/1.1", 200, "OK")
-	response := NewResponse(*statusLine, "", "")
-	_, err := conn.Write([]byte(response.String()))
+	buffer := make([]byte, 1024)
+	_, err := conn.Read(buffer)
 	if err != nil {
-		fmt.Println("Error writing to connection: ", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("error reading connection: %s", err.Error())
 	}
+	fmt.Println("Response read: ", string(buffer))
+
+	requestParts := strings.Split(string(buffer), "\r\n")
+	if len(requestParts) == 0 {
+		return errors.New("failed to parse http request")
+	}
+
+	requestStatusLine := strings.Split(requestParts[0], " ")
+	path := requestStatusLine[1]
+
+	statusLine := NewStatusLine("HTTP/1.1", StatusOK)
+	if path != "/" {
+		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
+	}
+
+	response := NewResponse(*statusLine, "", "")
+	_, err = conn.Write([]byte(response.String()))
+	if err != nil {
+		return fmt.Errorf("error writing to connection: %s", err.Error())
+	}
+
 	fmt.Println("Response sent: ", response)
+	return nil
 }
