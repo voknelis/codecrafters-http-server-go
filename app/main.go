@@ -148,17 +148,19 @@ func startTCPServer(port string) error {
 	}
 	defer listener.Close()
 
-	conn, err := listener.Accept()
-	if err != nil {
-		return fmt.Errorf("error accepting connection: %s", err.Error())
-	}
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return fmt.Errorf("error accepting connection: %s", err.Error())
+		}
 
-	err = handleConnection(conn)
-	if err != nil {
-		return err
+		go func() {
+			err = handleConnection(conn)
+			if err != nil {
+				fmt.Println("error: ", err.Error())
+			}
+		}()
 	}
-
-	return nil
 }
 
 func handleConnection(conn net.Conn) error {
