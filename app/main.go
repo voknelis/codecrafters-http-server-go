@@ -54,6 +54,66 @@ func NewStatusLine(httpVersion string, statusCode int) *StatusLine {
 	}
 }
 
+type RequestLine struct {
+	Method      string
+	Target      string
+	HttpVersion string
+}
+
+type Request struct {
+	RequestLine RequestLine
+	Headers     map[string]string
+	Body        string
+}
+
+func (r *Request) Parse(buffer string) error {
+	// Read request line
+	requestLineIndex := strings.Index(buffer, "\r\n")
+	if requestLineIndex == -1 {
+		return errors.New("failed to parse request line")
+	}
+
+	requestLineString := buffer[:requestLineIndex]
+	requestLine := strings.SplitN(requestLineString, " ", 3)
+	if len(requestLine) != 3 {
+		return errors.New("failed to parse request line")
+	}
+
+	r.RequestLine.Method = requestLine[0]
+	r.RequestLine.Target = requestLine[1]
+	r.RequestLine.HttpVersion = requestLine[2]
+
+	// Read headers
+	headers := make(map[string]string)
+	headersIndex := requestLineIndex + 2
+	for {
+		headersString := buffer[headersIndex:]
+		nextHeadersIndex := strings.Index(headersString, "\r\n")
+		if nextHeadersIndex == -1 {
+			return errors.New("failed to parse request headers")
+		}
+
+		headerString := buffer[headersIndex : nextHeadersIndex+headersIndex]
+		header := strings.SplitN(headerString, ":", 2)
+
+		// headers is empty
+		if len(header) != 2 {
+			headersIndex += 2
+			break
+		}
+
+		headers[header[0]] = strings.TrimSpace(header[1])
+		headersIndex += nextHeadersIndex + 2
+	}
+	r.Headers = headers
+
+	// Read body
+	body := strings.Trim(buffer[headersIndex:], "\x00")
+	r.Body = body
+
+	return nil
+}
+
 const (
 	StatusOK       = 200
 	StatusNotFound = 404
@@ -111,13 +171,9 @@ func handleConnection(conn net.Conn) error {
 	}
 	fmt.Println("Response read: ", string(buffer))
 
-	requestParts := strings.Split(string(buffer), "\r\n")
-	if len(requestParts) == 0 {
-		return errors.New("failed to parse http request")
-	}
-
-	requestStatusLine := strings.Split(requestParts[0], " ")
-	path := requestStatusLine[1]
+	request := Request{}
+	request.Parse(string(buffer))
+	path := request.RequestLine.Target
 
 	var statusLine *StatusLine
 	headers := make(map[string]string)
@@ -134,6 +190,14 @@ func handleConnection(conn net.Conn) error {
 		headers["Content-Length"] = strconv.Itoa(len(echoValue))
 
 		body = echoValue
+	} else if strings.HasPrefix(path, "/user-agent") {
+		statusLine = NewStatusLine("HTTP/1.1", StatusOK)
+
+		userAgent := request.Headers["User-Agent"]
+		headers["Content-Type"] = "text/plain"
+		headers["Content-Length"] = strconv.Itoa(len(userAgent))
+
+		body = userAgent
 	} else {
 		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
 	}
