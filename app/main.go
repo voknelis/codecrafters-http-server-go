@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -200,6 +201,21 @@ func handleConnection(conn net.Conn) error {
 		headers["Content-Length"] = strconv.Itoa(len(userAgent))
 
 		body = userAgent
+	} else if strings.HasPrefix(path, "/files/") {
+		filename, _ := strings.CutPrefix(path, "/files/")
+
+		temp := os.TempDir() // `/tmp` or `c:\tmp`
+		filePath := filepath.Join(temp, filename)
+		file, err := os.ReadFile(filePath)
+		if err != nil {
+			statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
+		} else {
+			statusLine = NewStatusLine("HTTP/1.1", StatusOK)
+			headers["Content-Type"] = "application/octet-stream"
+			headers["Content-Length"] = strconv.Itoa(len(file))
+
+			body = string(file)
+		}
 	} else {
 		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
 	}
