@@ -202,10 +202,10 @@ func handleConnection(conn net.Conn) error {
 
 		body = userAgent
 	} else if strings.HasPrefix(path, "/files/") {
+		dir := os.Args[2]
 		filename, _ := strings.CutPrefix(path, "/files/")
 
-		temp := os.TempDir() // `/tmp` or `c:\tmp`
-		filePath := filepath.Join(temp, filename)
+		filePath := filepath.Join(dir, filename)
 		file, err := os.ReadFile(filePath)
 		if err != nil {
 			statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
