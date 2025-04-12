@@ -116,14 +116,20 @@ func (r *Request) Parse(buffer string) error {
 }
 
 const (
-	StatusOK       = 200
-	StatusNotFound = 404
+	StatusOK         = 200
+	StatusCreated    = 201
+	StatusBadRequest = 400
+	StatusNotFound   = 404
 )
 
 func StatusText(code int) string {
 	switch code {
 	case StatusOK:
 		return "OK"
+	case StatusCreated:
+		return "Created"
+	case StatusBadRequest:
+		return "BadRequest"
 	case StatusNotFound:
 		return "Not Found"
 	default:
@@ -204,17 +210,33 @@ func handleConnection(conn net.Conn) error {
 	} else if strings.HasPrefix(path, "/files/") {
 		dir := os.Args[2]
 		filename, _ := strings.CutPrefix(path, "/files/")
-
 		filePath := filepath.Join(dir, filename)
-		file, err := os.ReadFile(filePath)
-		if err != nil {
-			statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
-		} else {
-			statusLine = NewStatusLine("HTTP/1.1", StatusOK)
-			headers["Content-Type"] = "application/octet-stream"
-			headers["Content-Length"] = strconv.Itoa(len(file))
 
-			body = string(file)
+		httpMethod := request.RequestLine.Method
+		if httpMethod == "GET" {
+			file, err := os.ReadFile(filePath)
+
+			if err != nil {
+				statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
+			} else {
+				statusLine = NewStatusLine("HTTP/1.1", StatusOK)
+				headers["Content-Type"] = "application/octet-stream"
+				headers["Content-Length"] = strconv.Itoa(len(file))
+
+				body = string(file)
+			}
+		} else if httpMethod == "POST" {
+			data := []byte(request.Body)
+			err := os.WriteFile(filePath, data, 0777)
+
+			if err != nil {
+				statusLine = NewStatusLine("HTTP/1.1", StatusBadRequest)
+				body = err.Error()
+			} else {
+				statusLine = NewStatusLine("HTTP/1.1", StatusCreated)
+			}
+		} else {
+			statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
 		}
 	} else {
 		statusLine = NewStatusLine("HTTP/1.1", StatusNotFound)
