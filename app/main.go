@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"net"
@@ -20,13 +22,30 @@ type Response struct {
 func (r *Response) String() string {
 	response := r.statusLine.String()
 
+	encodedBody := r.EncodedBody()
+	r.headers["Content-Length"] = strconv.Itoa(len(encodedBody))
+
 	for header, value := range r.headers {
 		response += fmt.Sprintf("%s: %s\r\n", header, value)
 	}
 	response += "\r\n"
 
-	response += r.body
+	response += encodedBody
 	return response
+}
+
+func (r *Response) EncodedBody() string {
+	encoding := r.headers["Content-Encoding"]
+	if encoding == "" {
+		return r.body
+	}
+
+	encodedBody, err := GetEncodedContent(encoding, r.body)
+	if err != nil {
+		fmt.Println("warning: ", err)
+		return r.body
+	}
+	return encodedBody
 }
 
 func NewResponse(statusLine StatusLine, headers map[string]string, body string) *Response {
@@ -161,6 +180,27 @@ func (e *Encodings) GetEncoding() string {
 	return ""
 }
 
+func GetEncodedContent(encoding, content string) (string, error) {
+	if encoding == "gzip" {
+		var zbuf bytes.Buffer
+		zw := gzip.NewWriter(&zbuf)
+
+		_, err := zw.Write([]byte(content))
+		if err != nil {
+			return "", err
+		}
+
+		err = zw.Close()
+		if err != nil {
+			return "", err
+		}
+
+		return zbuf.String(), nil
+	}
+
+	return content, nil
+}
+
 func main() {
 	err := startTCPServer(":4221")
 	if err != nil {
@@ -220,7 +260,6 @@ func handleConnection(conn net.Conn) error {
 		echoValue, _ := strings.CutPrefix(path, "/echo/")
 
 		headers["Content-Type"] = "text/plain"
-		headers["Content-Length"] = strconv.Itoa(len(echoValue))
 
 		rawEncoding := request.Headers["Accept-Encoding"]
 		encodings := Encodings{}
@@ -237,7 +276,6 @@ func handleConnection(conn net.Conn) error {
 
 		userAgent := request.Headers["User-Agent"]
 		headers["Content-Type"] = "text/plain"
-		headers["Content-Length"] = strconv.Itoa(len(userAgent))
 
 		body = userAgent
 	} else if strings.HasPrefix(path, "/files/") {
@@ -254,7 +292,6 @@ func handleConnection(conn net.Conn) error {
 			} else {
 				statusLine = NewStatusLine("HTTP/1.1", StatusOK)
 				headers["Content-Type"] = "application/octet-stream"
-				headers["Content-Length"] = strconv.Itoa(len(file))
 
 				body = string(file)
 			}
