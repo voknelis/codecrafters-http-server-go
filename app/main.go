@@ -87,6 +87,19 @@ type Request struct {
 	Body        string
 }
 
+func (r *Request) DecodedBody(content string) (string, error) {
+	encoding := r.Headers["Content-Encoding"]
+	if encoding == "" {
+		return content, nil
+	}
+
+	decodedBody, err := GetDecodedContent(encoding, content)
+	if err != nil {
+		return "", err
+	}
+	return decodedBody, nil
+}
+
 func (r *Request) Parse(buffer string) error {
 	// Read request line
 	requestLineIndex := strings.Index(buffer, "\r\n")
@@ -130,6 +143,11 @@ func (r *Request) Parse(buffer string) error {
 
 	// Read body
 	body := strings.Trim(buffer[headersIndex:], "\x00")
+	body, err := r.DecodedBody(body)
+	if err != nil {
+		return fmt.Errorf("failed to decode request body: %s", err)
+	}
+
 	r.Body = body
 
 	return nil
@@ -199,6 +217,30 @@ func GetEncodedContent(encoding, content string) (string, error) {
 	}
 
 	return content, nil
+}
+
+func GetDecodedContent(encoding, content string) (string, error) {
+	if encoding == "gzip" {
+		var zbuf bytes.Buffer
+		zr, err := gzip.NewReader(&zbuf)
+		if err != nil {
+			return "", err
+		}
+
+		_, err = zr.Read([]byte(content))
+		if err != nil {
+			return "", err
+		}
+
+		err = zr.Close()
+		if err != nil {
+			return "", err
+		}
+
+		return zbuf.String(), nil
+	}
+
+	return "", fmt.Errorf("invalid encoding: %s", encoding)
 }
 
 func main() {
