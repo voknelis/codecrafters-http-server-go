@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -137,6 +138,8 @@ func StatusText(code int) string {
 	}
 }
 
+var AcceptEncoding = []string{"gzip"}
+
 func main() {
 	err := startTCPServer(":4221")
 	if err != nil {
@@ -197,6 +200,11 @@ func handleConnection(conn net.Conn) error {
 
 		headers["Content-Type"] = "text/plain"
 		headers["Content-Length"] = strconv.Itoa(len(echoValue))
+
+		encoding := request.Headers["Accept-Encoding"]
+		if slices.Contains(AcceptEncoding, encoding) {
+			headers["Content-Encoding"] = encoding
+		}
 
 		body = echoValue
 	} else if strings.HasPrefix(path, "/user-agent") {
