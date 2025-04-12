@@ -138,7 +138,28 @@ func StatusText(code int) string {
 	}
 }
 
-var AcceptEncoding = []string{"gzip"}
+var acceptEncoding = []string{"gzip"}
+
+type Encodings struct {
+	encodings []string
+}
+
+func (e *Encodings) Parse(rawEncoding string) {
+	encodings := strings.Split(rawEncoding, ",")
+	for _, v := range encodings {
+		v = strings.TrimSpace(v)
+		if slices.Contains(acceptEncoding, v) {
+			e.encodings = append(e.encodings, v)
+		}
+	}
+}
+
+func (e *Encodings) GetEncoding() string {
+	if len(e.encodings) > 0 {
+		return e.encodings[0]
+	}
+	return ""
+}
 
 func main() {
 	err := startTCPServer(":4221")
@@ -201,8 +222,12 @@ func handleConnection(conn net.Conn) error {
 		headers["Content-Type"] = "text/plain"
 		headers["Content-Length"] = strconv.Itoa(len(echoValue))
 
-		encoding := request.Headers["Accept-Encoding"]
-		if slices.Contains(AcceptEncoding, encoding) {
+		rawEncoding := request.Headers["Accept-Encoding"]
+		encodings := Encodings{}
+		encodings.Parse(rawEncoding)
+		encoding := encodings.GetEncoding()
+
+		if encoding != "" {
 			headers["Content-Encoding"] = encoding
 		}
 
