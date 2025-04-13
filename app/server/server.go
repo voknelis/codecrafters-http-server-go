@@ -41,7 +41,13 @@ func (s *Server) Start() error {
 
 		go func() {
 			connection := conn
-			defer connection.Close()
+			defer func() {
+				fmt.Println("closing connection")
+				err := connection.Close()
+				if err != nil {
+					fmt.Println("failed to close connection: ", err.Error())
+				}
+			}()
 
 			for {
 				close, err := s.handleConnection(connection)
@@ -84,14 +90,15 @@ func (s *Server) handleConnection(conn net.Conn) (bool, error) {
 
 	path := request.RequestLine.Target
 
-	connection, ok := request.Headers["Connection"]
-	if ok && connection == "close" {
-		closeConnection = false
-	}
-
 	var statusLine *http.StatusLine
 	headers := make(map[string]string)
 	body := ""
+
+	connection, ok := request.Headers["Connection"]
+	if ok && connection == "close" {
+		closeConnection = true
+		headers["Connection"] = "close"
+	}
 
 	if path == "/" {
 		statusLine = http.NewStatusLine("HTTP/1.1", http.StatusOK)
