@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -39,9 +40,19 @@ func (s *Server) Start() error {
 		}
 
 		go func() {
-			err = s.handleConnection(conn)
-			if err != nil {
-				fmt.Println("error: ", err.Error())
+			connection := conn
+			defer connection.Close()
+
+			for {
+				close, err := s.handleConnection(connection)
+
+				if err != nil {
+					fmt.Println("connection error: ", err.Error())
+				}
+
+				if close {
+					break
+				}
 			}
 		}()
 	}
@@ -52,20 +63,31 @@ func (s *Server) Close() error {
 	return s.listener.Close()
 }
 
-func (s *Server) handleConnection(conn net.Conn) error {
-	defer conn.Close()
+func (s *Server) handleConnection(conn net.Conn) (bool, error) {
+	closeConnection := false
 
-	buffer := make([]byte, 1024)
-	_, err := conn.Read(buffer)
+	buffer, err := readConnection(conn)
 	if err != nil {
-		return fmt.Errorf("error reading connection: %s", err.Error())
+		if err == io.EOF {
+			// return and close the connection and latest package is received
+			return true, nil
+		}
+		return true, fmt.Errorf("error reading connection: %s", err.Error())
 	}
-	fmt.Println("Response read:\n", string(buffer))
+
+	requestString := string(buffer)
+	fmt.Println("Response read:\n", requestString)
 	fmt.Println("——————————————")
 
 	request := http.Request{}
-	request.Parse(string(buffer))
+	request.Parse(requestString)
+
 	path := request.RequestLine.Target
+
+	connection, ok := request.Headers["Connection"]
+	if ok && connection == "close" {
+		closeConnection = false
+	}
 
 	var statusLine *http.StatusLine
 	headers := make(map[string]string)
@@ -135,10 +157,19 @@ func (s *Server) handleConnection(conn net.Conn) error {
 	responseString := response.String()
 	_, err = conn.Write([]byte(responseString))
 	if err != nil {
-		return fmt.Errorf("error writing to connection: %s", err.Error())
+		return closeConnection, fmt.Errorf("error writing to connection: %s", err.Error())
 	}
 
 	fmt.Println("Response sent:\n", responseString)
 	fmt.Println("——————————————")
-	return nil
+	return closeConnection, nil
+}
+
+func readConnection(r io.Reader) ([]byte, error) {
+	// currently request size is limited to 4kb
+	// to simplify reading in chunks
+	buffer := make([]byte, 4096)
+
+	n, err := r.Read(buffer)
+	return buffer[:n], err
 }
