@@ -16,6 +16,8 @@ type Request struct {
 	RequestLine RequestLine
 	Headers     map[string]string
 	Body        string
+
+	pattern *string
 }
 
 func (r *Request) DecodedBody(content string) (string, error) {
@@ -82,4 +84,23 @@ func (r *Request) Parse(buffer string) error {
 	r.Body = body
 
 	return nil
+}
+
+func (r *Request) PathValue(name string) string {
+	segments := strings.Split(*r.pattern, "/")
+	routeSegments := strings.Split(r.RequestLine.Target, "/")
+
+	for i, targetSerment := range segments {
+		routeSegment := routeSegments[i]
+
+		// check if template variable
+		if strings.HasPrefix(targetSerment, "{") && strings.HasSuffix(targetSerment, "}") {
+			paramName := targetSerment[1 : len(targetSerment)-1]
+			if paramName == name {
+				return routeSegment
+			}
+		}
+	}
+
+	return ""
 }
